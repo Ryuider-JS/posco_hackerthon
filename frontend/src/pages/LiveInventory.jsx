@@ -1,5 +1,29 @@
 import { useRef, useEffect, useState } from 'react';
 import Header from '../components/Header';
+import { Line } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+} from 'chart.js';
+
+// Chart.js 컴포넌트 등록
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  PointElement,
+  LineElement,
+  Title,
+  Tooltip,
+  Legend,
+  Filler
+);
 
 const LiveInventory = () => {
   const videoRef = useRef(null);
@@ -15,6 +39,10 @@ const LiveInventory = () => {
   const [alerts, setAlerts] = useState([]);
   const [availableDevices, setAvailableDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
+  const [availableProducts, setAvailableProducts] = useState([]);
+  const [selectedProducts, setSelectedProducts] = useState([]);
+  const [isProductSelectorOpen, setIsProductSelectorOpen] = useState(false);
+  const [inventoryHistory, setInventoryHistory] = useState({});
 
   // 사용 가능한 카메라 목록 가져오기
   useEffect(() => {
@@ -80,6 +108,11 @@ const LiveInventory = () => {
     };
   }, [selectedDeviceId]);
 
+  // 제품 목록 가져오기
+  useEffect(() => {
+    fetchAvailableProducts();
+  }, []);
+
   // 재고 현황 및 알림 주기적으로 가져오기
   useEffect(() => {
     fetchCurrentInventory();
@@ -91,7 +124,25 @@ const LiveInventory = () => {
     }, 10000); // 10초마다
 
     return () => clearInterval(interval);
-  }, []);
+  }, [selectedProducts]); // 선택된 제품이 변경되면 알림 업데이트
+
+  // 재고 이력 가져오기 (재고 현황이 로드된 후)
+  useEffect(() => {
+    if (currentInventory.length > 0) {
+      fetchInventoryHistory();
+    }
+  }, [currentInventory, selectedProducts]);
+
+  // 사용 가능한 제품 목록 조회
+  const fetchAvailableProducts = async () => {
+    try {
+      const response = await fetch('http://localhost:8000/api/products');
+      const data = await response.json();
+      setAvailableProducts(data.products || []);
+    } catch (error) {
+      console.error('제품 목록 조회 실패:', error);
+    }
+  };
 
   // 현재 재고 현황 조회
   const fetchCurrentInventory = async () => {
@@ -107,11 +158,42 @@ const LiveInventory = () => {
   // 재고 부족 알림 조회
   const fetchAlerts = async () => {
     try {
-      const response = await fetch('http://localhost:8000/api/inventory/alerts');
+      // 선택된 제품이 있으면 쿼리 파라미터 추가
+      let url = 'http://localhost:8000/api/inventory/alerts';
+      if (selectedProducts.length > 0) {
+        url += `?selected_qcodes=${selectedProducts.join(',')}`;
+      }
+
+      const response = await fetch(url);
       const data = await response.json();
       setAlerts(data.alerts || []);
     } catch (error) {
       console.error('알림 조회 실패:', error);
+    }
+  };
+
+  // 재고 이력 조회 (선택된 제품 또는 상위 5개)
+  const fetchInventoryHistory = async () => {
+    try {
+      const productsToFetch = selectedProducts.length > 0
+        ? selectedProducts.slice(0, 5)  // 선택된 제품 중 최대 5개
+        : currentInventory.slice(0, 5).map(p => p.qcode);  // 전체 중 상위 5개
+
+      const historyPromises = productsToFetch.map(async (qcode) => {
+        const response = await fetch(`http://localhost:8000/api/inventory/history/${qcode}?days=7`);
+        const data = await response.json();
+        return { qcode, data };
+      });
+
+      const results = await Promise.all(historyPromises);
+      const historyMap = {};
+      results.forEach(({ qcode, data }) => {
+        historyMap[qcode] = data;
+      });
+
+      setInventoryHistory(historyMap);
+    } catch (error) {
+      console.error('재고 이력 조회 실패:', error);
     }
   };
 
@@ -143,6 +225,25 @@ const LiveInventory = () => {
       ctx.fillStyle = '#000000';
       ctx.fillText(label, x + 5, y - 7);
     });
+  };
+
+  // 제품 선택 핸들러
+  const toggleProductSelection = (qcode) => {
+    setSelectedProducts(prev => {
+      if (prev.includes(qcode)) {
+        return prev.filter(q => q !== qcode);
+      } else {
+        return [...prev, qcode];
+      }
+    });
+  };
+
+  const selectAllProducts = () => {
+    setSelectedProducts(availableProducts.map(p => p.qcode));
+  };
+
+  const deselectAllProducts = () => {
+    setSelectedProducts([]);
   };
 
   // 프레임 캡처 및 Q-CODE 감지 (다중 제품 지원)
@@ -182,6 +283,14 @@ const LiveInventory = () => {
         console.log('[LiveInventory] Blob 생성 완료, API 호출 중...');
         const formData = new FormData();
         formData.append('file', blob, 'frame.jpg');
+
+        // 선택된 제품이 있으면 추가
+        if (selectedProducts.length > 0) {
+          formData.append('selected_qcodes', selectedProducts.join(','));
+          console.log('[LiveInventory] 선택된 제품:', selectedProducts.join(','));
+        } else {
+          console.log('[LiveInventory] 전체 제품 감지 모드');
+        }
 
         try {
           // 백엔드 API 호출 (새 엔드포인트: 다중 제품 지원)
@@ -389,6 +498,79 @@ const LiveInventory = () => {
             </select>
           </div>
 
+          {/* 제품 선택 드롭다운 */}
+          <div className="relative">
+            <button
+              onClick={() => setIsProductSelectorOpen(!isProductSelectorOpen)}
+              className="px-3 py-2 border border-gray-300 rounded text-sm bg-white hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 flex items-center gap-2"
+            >
+              <span className="text-gray-700">
+                {selectedProducts.length === 0
+                  ? '전체 제품'
+                  : selectedProducts.length === availableProducts.length
+                  ? '전체 제품 선택됨'
+                  : `${selectedProducts.length}개 선택됨`}
+              </span>
+              <span className="text-gray-500">▼</span>
+            </button>
+
+            {/* 드롭다운 메뉴 */}
+            {isProductSelectorOpen && (
+              <div className="absolute top-full left-0 mt-1 w-80 bg-white border border-gray-300 rounded shadow-lg z-50 max-h-96 overflow-hidden flex flex-col">
+                {/* 헤더 */}
+                <div className="p-3 border-b bg-gray-50 flex justify-between items-center">
+                  <span className="text-sm font-semibold text-gray-700">감지할 제품 선택</span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={selectAllProducts}
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      전체 선택
+                    </button>
+                    <span className="text-gray-300">|</span>
+                    <button
+                      onClick={deselectAllProducts}
+                      className="text-xs text-blue-600 hover:text-blue-800"
+                    >
+                      전체 해제
+                    </button>
+                  </div>
+                </div>
+
+                {/* 제품 리스트 */}
+                <div className="overflow-y-auto flex-1">
+                  {availableProducts.map((product) => (
+                    <label
+                      key={product.qcode}
+                      className="flex items-center px-3 py-2 hover:bg-gray-50 cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selectedProducts.includes(product.qcode)}
+                        onChange={() => toggleProductSelection(product.qcode)}
+                        className="mr-3 w-4 h-4 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
+                      />
+                      <div className="flex-1">
+                        <div className="text-sm font-medium text-gray-900">{product.name}</div>
+                        <div className="text-xs text-gray-500">{product.qcode}</div>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+
+                {/* 푸터 */}
+                <div className="p-3 border-t bg-gray-50">
+                  <button
+                    onClick={() => setIsProductSelectorOpen(false)}
+                    className="w-full px-3 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700"
+                  >
+                    확인
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
           {isScanning && (
             <div className="flex items-center gap-2 px-4 py-3 bg-green-100 text-green-800 rounded-lg">
               <div className="animate-pulse">●</div>
@@ -479,6 +661,122 @@ const LiveInventory = () => {
                     </div>
                   </div>
                 ))}
+              </div>
+            </div>
+          )}
+
+          {/* 그래프 섹션 - 시간대별 재고 변화 */}
+          {Object.keys(inventoryHistory).length > 0 && (
+            <div className="bg-white rounded-lg shadow-md p-6">
+              <h3 className="text-lg font-bold mb-4 text-gray-800">📈 시간대별 재고 변화 추이 (최근 7일)</h3>
+              <div className="h-96">
+                <Line
+                  data={{
+                    datasets: Object.entries(inventoryHistory).map(([qcode, historyData], index) => {
+                      const colors = [
+                        { border: 'rgb(59, 130, 246)', bg: 'rgba(59, 130, 246, 0.1)' },
+                        { border: 'rgb(34, 197, 94)', bg: 'rgba(34, 197, 94, 0.1)' },
+                        { border: 'rgb(239, 68, 68)', bg: 'rgba(239, 68, 68, 0.1)' },
+                        { border: 'rgb(251, 191, 36)', bg: 'rgba(251, 191, 36, 0.1)' },
+                        { border: 'rgb(168, 85, 247)', bg: 'rgba(168, 85, 247, 0.1)' }
+                      ];
+                      const color = colors[index % colors.length];
+
+                      // 이력 데이터를 시간순으로 정렬
+                      const sortedHistory = [...(historyData.history || [])].sort((a, b) =>
+                        new Date(a.timestamp) - new Date(b.timestamp)
+                      );
+
+                      return {
+                        label: historyData.product_name || qcode,
+                        data: sortedHistory.map(h => ({
+                          x: new Date(h.timestamp).toLocaleString('ko-KR', {
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          }),
+                          y: h.quantity
+                        })),
+                        borderColor: color.border,
+                        backgroundColor: color.bg,
+                        borderWidth: 2,
+                        fill: true,
+                        tension: 0.4,
+                        pointRadius: 4,
+                        pointHoverRadius: 6
+                      };
+                    })
+                  }}
+                  options={{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                      mode: 'index',
+                      intersect: false,
+                    },
+                    plugins: {
+                      legend: {
+                        position: 'top',
+                        labels: {
+                          usePointStyle: true,
+                          padding: 15
+                        }
+                      },
+                      tooltip: {
+                        callbacks: {
+                          label: function(context) {
+                            const qcode = Object.keys(inventoryHistory)[context.datasetIndex];
+                            const historyData = inventoryHistory[qcode];
+                            return `${context.dataset.label}: ${context.parsed.y}${historyData.history?.[0]?.stock_unit || '개'}`;
+                          }
+                        }
+                      }
+                    },
+                    scales: {
+                      x: {
+                        type: 'category',
+                        title: {
+                          display: true,
+                          text: '시간'
+                        },
+                        ticks: {
+                          maxRotation: 45,
+                          minRotation: 45
+                        }
+                      },
+                      y: {
+                        beginAtZero: true,
+                        title: {
+                          display: true,
+                          text: '재고 수량'
+                        },
+                        ticks: {
+                          precision: 0
+                        }
+                      }
+                    }
+                  }}
+                />
+              </div>
+              <div className="mt-4 flex items-center justify-between text-sm text-gray-600">
+                <p>
+                  * {selectedProducts.length > 0 ? '선택된 제품 중' : '전체 제품 중'} 최대 5개 제품의 재고 변화 추이
+                </p>
+                <div className="flex gap-4">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                    <span className="text-xs">안전</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-yellow-500 rounded-full"></div>
+                    <span className="text-xs">경고</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-red-500 rounded-full"></div>
+                    <span className="text-xs">긴급</span>
+                  </div>
+                </div>
               </div>
             </div>
           )}

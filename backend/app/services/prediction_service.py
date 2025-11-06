@@ -164,20 +164,50 @@ def get_all_predictions(db: Session) -> List[Dict]:
 
     return predictions
 
-def get_low_stock_alerts(db: Session) -> List[Dict]:
+def get_low_stock_alerts(db: Session, selected_qcodes: Optional[List[str]] = None) -> List[Dict]:
     """
-    재고 부족 알림 목록 조회
+    재고 부족 알림 목록 조회 (단순화 버전)
+
+    추세 계산 없이 현재 재고 수준만으로 판단:
+    - current_stock <= min_stock → critical
+    - current_stock <= reorder_point → warning
+
+    Args:
+        db: 데이터베이스 세션
+        selected_qcodes: 선택된 Q-CODE 목록 (None이면 전체 제품)
 
     Returns:
         긴급 및 경고 상태 제품 목록
     """
-    predictions = get_all_predictions(db)
+    all_products = db.query(Product).all()
+    alerts = []
 
-    # critical 및 warning 상태만 필터링
-    alerts = [
-        p for p in predictions
-        if p.get("status") in ["critical", "warning"] and not p.get("insufficient_data")
-    ]
+    # 선택된 제품이 있으면 필터링용 set 생성
+    qcode_filter = set(selected_qcodes) if selected_qcodes else None
+
+    for product in all_products:
+        # 선택된 제품 필터링
+        if qcode_filter and product.qcode not in qcode_filter:
+            continue
+
+        # 재고 상태 판단
+        status = _get_stock_status(product.current_stock, product.reorder_point, product.min_stock)
+
+        # critical 또는 warning 상태만 알림에 포함
+        if status in ["critical", "warning"]:
+            alerts.append({
+                "qcode": product.qcode,
+                "product_name": product.name,
+                "current_stock": product.current_stock,
+                "min_stock": product.min_stock,
+                "reorder_point": product.reorder_point,
+                "stock_unit": product.stock_unit,
+                "status": status,
+                "insufficient_data": False  # 항상 false (추세 계산 안 함)
+            })
+
+    # 상태별 정렬 (critical > warning)
+    alerts.sort(key=lambda x: (0 if x["status"] == "critical" else 1, x["current_stock"]))
 
     return alerts
 

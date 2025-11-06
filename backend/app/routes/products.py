@@ -349,14 +349,28 @@ async def delete_product(qcode: str, db: Session = Depends(get_db)):
 @router.post("/detect-qcode")
 async def detect_qcode(
     file: UploadFile = File(...),
+    selected_qcodes: Optional[str] = Form(None),  # 쉼표로 구분된 Q-CODE 목록
     db: Session = Depends(get_db)
 ):
     """
     웹캠 프레임에서 Q-CODE 제품 감지 및 재고 카운팅
     Roboflow Object Detection 사용 (Gemini 대체)
+
+    Args:
+        file: 웹캠 프레임 이미지
+        selected_qcodes: 감지할 제품 Q-CODE 목록 (쉼표 구분, 예: "Q1208172,Q13425723")
+                        None이면 전체 제품 감지
     """
     print("\n" + "="*80)
     print("[API CALL] /api/detect-qcode - 웹캠 프레임 수신")
+
+    # 선택된 제품 목록 파싱
+    qcode_filter = None
+    if selected_qcodes and selected_qcodes.strip():
+        qcode_filter = set(qc.strip() for qc in selected_qcodes.split(',') if qc.strip())
+        print(f"[*] 선택된 제품 필터: {qcode_filter}")
+    else:
+        print("[*] 전체 제품 감지 모드")
     print("="*80)
 
     try:
@@ -397,6 +411,11 @@ async def detect_qcode(
             qcode = detected["qcode"]
             count = detected["count"]
             confidence = detected["confidence"]
+
+            # 선택된 제품 필터링
+            if qcode_filter and qcode not in qcode_filter:
+                print(f"[SKIP] {qcode} - 선택된 제품이 아님")
+                continue
 
             # 해당 Q-CODE의 제품 조회
             product = db.query(Product).filter(Product.qcode == qcode).first()
