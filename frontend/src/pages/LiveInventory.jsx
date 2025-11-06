@@ -37,7 +37,6 @@ const LiveInventory = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentInventory, setCurrentInventory] = useState([]);
   const [alerts, setAlerts] = useState([]);
-  const [notifiedQcodes, setNotifiedQcodes] = useState(new Set());
   const [availableDevices, setAvailableDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
   const [availableProducts, setAvailableProducts] = useState([]);
@@ -45,6 +44,9 @@ const LiveInventory = () => {
   const [isProductSelectorOpen, setIsProductSelectorOpen] = useState(false);
   const [inventoryHistory, setInventoryHistory] = useState({});
   const [isLoadingAlerts, setIsLoadingAlerts] = useState(false);
+
+  // 이전 알림 상태 추적 (상태 변화 감지용)
+  const prevAlertsRef = useRef([]);
 
   // 사용 가능한 카메라 목록 가져오기
   useEffect(() => {
@@ -128,40 +130,62 @@ const LiveInventory = () => {
     return () => clearInterval(interval);
   }, [selectedProducts]); // selectedProducts가 변경되면 알림 재조회
 
-  // 재고 부족 알림이 생기면 Bedrock Agent에 Q-CODE 전달
+  // 재고 부족 알림이 생기면 Bedrock Agent에 Q-CODE 전달 (상태 변화 시에만)
   useEffect(() => {
-    if (!alerts || alerts.length === 0) return;
+    if (!alerts || alerts.length === 0) {
+      prevAlertsRef.current = [];
+      return;
+    }
 
     const agentId = 'FVFAR7ILQW';
     const agentAliasId = 'GDV3946APK';
 
-    // 한 번 보낸 QCODE는 중복 전송 방지
-    const toNotify = alerts
-      .filter(a => a && a.qcode && (a.status === 'critical' || a.status === 'warning'))
-      .map(a => a.qcode);
+    // 이전 알림 상태와 비교하여 새로 발생한 알림만 추출
+    const prevAlerts = prevAlertsRef.current;
+    const newAlerts = alerts.filter(alert => {
+      if (!alert || !alert.qcode) return false;
+      if (alert.status !== 'critical' && alert.status !== 'warning') return false;
 
-    if (toNotify.length === 0) return;
+      // 이전에 같은 qcode + status 조합이 없었는지 확인
+      return !prevAlerts.some(prev =>
+        prev.qcode === alert.qcode && prev.status === alert.status
+      );
+    });
 
-    const newSet = new Set(notifiedQcodes);
+    // 새로운 알림이 있으면 Bedrock에 전송
+    if (newAlerts.length > 0) {
+      console.log('[LiveInventory] 새로운 알림 감지:', newAlerts.length, '건');
 
-    toNotify.forEach(async (qcode) => {
-      if (newSet.has(qcode)) return;
-      try {
-        // 백엔드가 Bedrock Agent 호출을 대행한다고 가정한 엔드포인트
-        // 필요 시 경로를 서버 구현에 맞게 변경하세요
-        await fetch('http://localhost:8000/api/bedrock/agent-notify', {
+      newAlerts.forEach((alert) => {
+        // fire-and-forget: 응답을 기다리지 않음
+        fetch('http://localhost:8000/api/bedrock/agent-notify', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json'
           },
-          body: JSON.stringify({ qcode, agentId, agentAliasId })
+          body: JSON.stringify({
+            qcode: alert.qcode,
+            productName: alert.name,
+            currentStock: alert.current_stock,
+            minStock: alert.min_stock,
+            unit: alert.stock_unit || 'EA',
+            agentId,
+            agentAliasId
+          })
+        })
+        .then(res => {
+          if (res.ok) {
+            console.log(`[LiveInventory] Bedrock 알림 전송 성공: ${alert.qcode}`);
+          }
+        })
+        .catch(err => {
+          console.error('[LiveInventory] Bedrock Agent 알림 전송 실패:', err);
         });
-        newSet.add(qcode);
-        setNotifiedQcodes(newSet);
-      } catch (err) {
-        console.error('[LiveInventory] Bedrock Agent 알림 전송 실패:', err);
-      }
-    });
+      });
+    }
+
+    // 현재 알림 상태 저장
+    prevAlertsRef.current = alerts;
   }, [alerts]);
 
 

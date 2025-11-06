@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
@@ -225,42 +225,25 @@ async def record_inventory(
 
 
 # ==========================
-# Bedrock Agent Notify (POST)
+# Bedrock Agent Notify 백그라운드 작업
 # ==========================
-@router.post("/bedrock/agent-notify")
-async def bedrock_agent_notify(payload: dict):
+def _invoke_bedrock_agent_background(payload: dict):
     """
-    재고 부족(Q-CODE) 정보를 Bedrock Agent에 전달.
-    요청 JSON 예시:
-    {
-      "qcode": "Q12345",
-      "productName": "NSK 609ZZ",
-      "currentStock": 12,
-      "minStock": 30,
-      "unit": "EA",
-      "agentId": "FVFAR7ILQW",
-      "agentAliasId": "GDV3946APK"
-    }
+    Bedrock Agent 호출을 백그라운드에서 처리하는 함수
     """
     try:
         qcode = payload.get("qcode")
-        if not qcode:
-            raise HTTPException(status_code=400, detail="qcode is required")
-
-        agent_id = payload.get("agentId") or os.getenv("BEDROCK_AGENT_ID")
-        alias_id = payload.get("agentAliasId") or os.getenv("BEDROCK_AGENT_ALIAS_ID")
-        if not agent_id or not alias_id:
-            raise HTTPException(status_code=400, detail="agentId/agentAliasId are required")
-
+        agent_id = payload.get("agentId")
+        alias_id = payload.get("agentAliasId")
         product_name = payload.get("productName")
         current_stock = payload.get("currentStock")
         min_stock = payload.get("minStock")
         unit = payload.get("unit")
 
+        print(f"\n[BACKGROUND] Bedrock Agent 호출 시작 - Q-CODE: {qcode}")
+
         # Prompt 구성
-        lines = [
-            f"- Q-CODE: {qcode}"
-        ]
+        lines = [f"- Q-CODE: {qcode}"]
         if product_name is not None:
             lines.append(f"- 제품명: {product_name}")
         if current_stock is not None:
@@ -300,19 +283,70 @@ async def bedrock_agent_notify(payload: dict):
                     else:
                         completion_text += str(buf)
 
-        return {
-            "success": True,
+        print(f"[BACKGROUND] Bedrock Agent 응답 완료 - Q-CODE: {qcode}")
+        print(f"[BACKGROUND] 응답: {completion_text.strip()[:100]}...")
+
+    except ClientError as e:
+        print(f"[BACKGROUND ERROR] Bedrock client error for {qcode}: {str(e)}")
+    except Exception as e:
+        print(f"[BACKGROUND ERROR] Bedrock Agent 호출 실패 for {qcode}: {str(e)}")
+
+
+# ==========================
+# Bedrock Agent Notify (POST)
+# ==========================
+@router.post("/bedrock/agent-notify")
+async def bedrock_agent_notify(payload: dict, background_tasks: BackgroundTasks):
+    """
+    재고 부족(Q-CODE) 정보를 Bedrock Agent에 전달 (백그라운드 처리).
+    즉시 응답을 반환하고, Bedrock Agent 호출은 백그라운드에서 실행됩니다.
+
+    요청 JSON 예시:
+    {
+      "qcode": "Q12345",
+      "productName": "NSK 609ZZ",
+      "currentStock": 12,
+      "minStock": 30,
+      "unit": "EA",
+      "agentId": "FVFAR7ILQW",
+      "agentAliasId": "GDV3946APK"
+    }
+    """
+    try:
+        qcode = payload.get("qcode")
+        if not qcode:
+            raise HTTPException(status_code=400, detail="qcode is required")
+
+        agent_id = payload.get("agentId") or os.getenv("BEDROCK_AGENT_ID")
+        alias_id = payload.get("agentAliasId") or os.getenv("BEDROCK_AGENT_ALIAS_ID")
+        if not agent_id or not alias_id:
+            raise HTTPException(status_code=400, detail="agentId/agentAliasId are required")
+
+        # 페이로드 준비
+        bedrock_payload = {
             "qcode": qcode,
             "agentId": agent_id,
             "agentAliasId": alias_id,
-            "sessionId": session_id,
-            "prompt": prompt,
-            "response": completion_text.strip()
+            "productName": payload.get("productName"),
+            "currentStock": payload.get("currentStock"),
+            "minStock": payload.get("minStock"),
+            "unit": payload.get("unit")
+        }
+
+        # 백그라운드 작업으로 Bedrock Agent 호출 추가
+        background_tasks.add_task(_invoke_bedrock_agent_background, bedrock_payload)
+
+        print(f"[API] Bedrock Agent 호출 예약 완료 - Q-CODE: {qcode}")
+
+        # 즉시 응답 반환 (백그라운드 작업은 계속 실행됨)
+        return {
+            "success": True,
+            "qcode": qcode,
+            "message": "Bedrock Agent 호출이 백그라운드에서 실행 중입니다.",
+            "status": "queued"
         }
 
     except HTTPException:
         raise
-    except ClientError as e:
-        raise HTTPException(status_code=500, detail=f"Bedrock client error: {str(e)}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
