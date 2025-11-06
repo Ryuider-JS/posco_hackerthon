@@ -239,6 +239,14 @@ def detect_products_in_frame(image_path: str) -> Dict:
             "error": "..." (실패 시)
         }
     """
+    # 클래스 이름 매핑 (Roboflow 학습 시 사용한 이름 -> Q-CODE)
+    CLASS_NAME_TO_QCODE = {
+        "Tangerine": "TANGERINE-001",  # 임시 Q-CODE, 나중에 실제 제품과 매핑 필요
+        # 추가 매핑이 필요하면 여기에 추가:
+        # "Apple": "Q1208172",
+        # "Banana": "Q13425723",
+    }
+
     try:
         # 모델 ID 확인
         if not ROBOFLOW_MODEL_ID:
@@ -272,8 +280,11 @@ def detect_products_in_frame(image_path: str) -> Dict:
         product_counts = {}
 
         for detection in detections:
-            qcode = detection.get("class", "unknown")
+            class_name = detection.get("class", "unknown")
             confidence = detection.get("confidence", 0.0)
+
+            # 클래스 이름을 Q-CODE로 변환
+            qcode = CLASS_NAME_TO_QCODE.get(class_name, class_name)
 
             if qcode not in product_counts:
                 product_counts[qcode] = {"count": 0, "confidences": []}
