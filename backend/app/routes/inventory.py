@@ -2,6 +2,10 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from typing import List, Optional
 from datetime import datetime, timedelta
+import os
+import uuid
+import boto3
+from botocore.exceptions import ClientError
 
 from app.database import get_db
 from app.models.product import Product
@@ -164,7 +168,7 @@ async def record_inventory(
     수동으로 재고 수량 기록
 
     Args:
-        qcode: 제품 Q-CODE
+        qcode: 제품 Q-CODE      
         quantity: 재고 수량
         notes: 메모 (선택)
     """
@@ -205,4 +209,98 @@ async def record_inventory(
         raise
     except Exception as e:
         db.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================
+# Bedrock Agent Notify (POST)
+# ==========================
+@router.post("/bedrock/agent-notify")
+async def bedrock_agent_notify(payload: dict):
+    """
+    재고 부족(Q-CODE) 정보를 Bedrock Agent에 전달.
+    요청 JSON 예시:
+    {
+      "qcode": "Q12345",
+      "productName": "NSK 609ZZ",
+      "currentStock": 12,
+      "minStock": 30,
+      "unit": "EA",
+      "agentId": "FVFAR7ILQW",
+      "agentAliasId": "GDV3946APK"
+    }
+    """
+    try:
+        qcode = payload.get("qcode")
+        if not qcode:
+            raise HTTPException(status_code=400, detail="qcode is required")
+
+        agent_id = payload.get("agentId") or os.getenv("BEDROCK_AGENT_ID")
+        alias_id = payload.get("agentAliasId") or os.getenv("BEDROCK_AGENT_ALIAS_ID")
+        if not agent_id or not alias_id:
+            raise HTTPException(status_code=400, detail="agentId/agentAliasId are required")
+
+        product_name = payload.get("productName")
+        current_stock = payload.get("currentStock")
+        min_stock = payload.get("minStock")
+        unit = payload.get("unit")
+
+        # Prompt 구성
+        lines = [
+            f"- Q-CODE: {qcode}"
+        ]
+        if product_name is not None:
+            lines.append(f"- 제품명: {product_name}")
+        if current_stock is not None:
+            lines.append(f"- 현재 재고: {current_stock}{unit or ''}")
+        if min_stock is not None:
+            lines.append(f"- 최소 재고: {min_stock}{unit or ''}")
+        prompt = "\n".join(lines)
+
+        region = os.getenv("AWS_REGION", "ap-northeast-2")
+        client = boto3.client("bedrock-agent-runtime", region_name=region)
+
+        # invoke_agent (streaming)
+        session_id = str(uuid.uuid4())
+        resp = client.invoke_agent(
+            agentId=agent_id,
+            agentAliasId=alias_id,
+            sessionId=session_id,
+            inputText=prompt,
+            enableTrace=True,
+            streamingConfigurations={
+                "applyGuardrailInterval": 100,
+                "streamFinalResponse": False
+            }
+        )
+
+        completion_text = ""
+        stream = resp.get("completion")
+        if stream:
+            for event in stream:
+                if "chunk" in event:
+                    chunk = event["chunk"]
+                    buf = chunk.get("bytes")
+                    if hasattr(buf, "read"):
+                        buf = buf.read()
+                    if isinstance(buf, (bytes, bytearray)):
+                        completion_text += buf.decode("utf-8", errors="ignore")
+                    else:
+                        completion_text += str(buf)
+
+        return {
+            "success": True,
+            "qcode": qcode,
+            "agentId": agent_id,
+            "agentAliasId": alias_id,
+            "sessionId": session_id,
+            "prompt": prompt,
+            "response": completion_text.strip()
+        }
+
+    except HTTPException:
+        raise
+    except ClientError as e:
+        raise HTTPException(status_code=500, detail=f"Bedrock client error: {str(e)}")
+    except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

@@ -13,6 +13,7 @@ const LiveInventory = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [currentInventory, setCurrentInventory] = useState([]);
   const [alerts, setAlerts] = useState([]);
+  const [notifiedQcodes, setNotifiedQcodes] = useState(new Set());
   const [availableDevices, setAvailableDevices] = useState([]);
   const [selectedDeviceId, setSelectedDeviceId] = useState(null);
 
@@ -80,6 +81,8 @@ const LiveInventory = () => {
     };
   }, [selectedDeviceId]);
 
+
+
   // 재고 현황 및 알림 주기적으로 가져오기
   useEffect(() => {
     fetchCurrentInventory();
@@ -92,6 +95,42 @@ const LiveInventory = () => {
 
     return () => clearInterval(interval);
   }, []);
+
+  // 재고 부족 알림이 생기면 Bedrock Agent에 Q-CODE 전달
+  useEffect(() => {
+    if (!alerts || alerts.length === 0) return;
+
+    const agentId = 'FVFAR7ILQW';
+    const agentAliasId = 'GDV3946APK';
+
+    // 한 번 보낸 QCODE는 중복 전송 방지
+    const toNotify = alerts
+      .filter(a => a && a.qcode && (a.status === 'critical' || a.status === 'warning'))
+      .map(a => a.qcode);
+
+    if (toNotify.length === 0) return;
+
+    const newSet = new Set(notifiedQcodes);
+
+    toNotify.forEach(async (qcode) => {
+      if (newSet.has(qcode)) return;
+      try {
+        // 백엔드가 Bedrock Agent 호출을 대행한다고 가정한 엔드포인트
+        // 필요 시 경로를 서버 구현에 맞게 변경하세요
+        await fetch('http://localhost:8000/api/bedrock/agent-notify', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ qcode, agentId, agentAliasId })
+        });
+        newSet.add(qcode);
+        setNotifiedQcodes(newSet);
+      } catch (err) {
+        console.error('[LiveInventory] Bedrock Agent 알림 전송 실패:', err);
+      }
+    });
+  }, [alerts]);
 
   // 현재 재고 현황 조회
   const fetchCurrentInventory = async () => {
