@@ -142,12 +142,24 @@ async def get_prediction_by_qcode(qcode: str, db: Session = Depends(get_db)):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/inventory/alerts")
-async def get_alerts(db: Session = Depends(get_db)):
+async def get_alerts(
+    selected_qcodes: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
     """
     재고 부족 알림 목록 조회 (critical, warning 상태)
+
+    Args:
+        selected_qcodes: 선택된 Q-CODE 목록 (쉼표로 구분, 예: "Q1,Q2,Q3")
+                        None이면 전체 제품 조회
     """
     try:
-        alerts = get_low_stock_alerts(db)
+        # 선택된 제품 목록 파싱
+        qcode_list = None
+        if selected_qcodes and selected_qcodes.strip():
+            qcode_list = [qc.strip() for qc in selected_qcodes.split(',') if qc.strip()]
+
+        alerts = get_low_stock_alerts(db, qcode_list)
 
         return {
             "alert_count": len(alerts),

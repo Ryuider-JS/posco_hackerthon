@@ -14,8 +14,14 @@ const Sidebar = () => {
     <div className="w-64 bg-gradient-to-b from-[#0d47a1] to-[#1565c0] min-h-screen text-white flex flex-col">
       {/* Logo Section */}
       <div className="p-6 text-center border-b border-blue-400">
-        <h1 className="text-2xl font-bold mb-2">Q-ProcureAssistant</h1>
-        <p className="text-sm text-blue-200">AI 구매 관리 시스템</p>
+        <div className="mb-4 flex justify-center">
+          <img
+            src="/POSCO_logo.png"
+            alt="POSCO Logo"
+            className="h-16 w-auto object-contain"
+          />
+        </div>
+        <h1 className="text-xl font-bold">Q-ProcureAssistant</h1>
       </div>
 
       {/* Menu Items */}

@@ -241,7 +241,8 @@ def detect_products_in_frame(image_path: str) -> Dict:
     """
     # 클래스 이름 매핑 (Roboflow 학습 시 사용한 이름 -> Q-CODE)
     CLASS_NAME_TO_QCODE = {
-        "Tangerine": "TANGERINE-001",  # 임시 Q-CODE, 나중에 실제 제품과 매핑 필요
+        "Tangerine": "TANGERINE-001",  # 탄제린 (귤)
+        "Egg": "EGG-001",  # 계란
         # 추가 매핑이 필요하면 여기에 추가:
         # "Apple": "Q1208172",
         # "Banana": "Q13425723",

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Boolean
+from sqlalchemy import Column, Integer, String, Float, DateTime, Text, Boolean, JSON
 from sqlalchemy.orm import relationship
 from datetime import datetime
 from app.database import Base
@@ -27,10 +27,27 @@ class Product(Base):
     material = Column(String)  # 재질
     specs = Column(Text)       # Additional specs in text format
 
+    # 카탈로그 정보 (Catalog information)
+    n2b_product_code = Column(String, index=True)  # 엔투비품번
+    customer_code_1 = Column(String)  # 고객사품번1
+    sourcing_group = Column(String, index=True)  # 표준소싱그룹
+    leaf_class = Column(String, index=True)  # 리프클래스
+    standard_name = Column(String)  # 표준품명
+    model_name = Column(String)  # 모델명
+    manufacturer = Column(String, index=True)  # 제조사
+    is_standardized = Column(Boolean, default=False)  # 표준화여부
+    is_public = Column(Boolean, default=True)  # 공개여부
+    attributes = Column(JSON)  # 개별속성 (Key-Value pairs in JSON)
+
     # Purchase history
     purchase_count = Column(Integer, default=0)
     average_rating = Column(Float, default=0.0)
     last_price = Column(Float, default=0.0)
+
+    # 구매 예측 정보 (Purchase prediction)
+    last_order_date = Column(DateTime)  # 최근 주문일
+    next_predicted_purchase_date = Column(DateTime)  # 예상 다음 구매일
+    avg_purchase_interval_days = Column(Float)  # 평균 구매 간격(일)
 
     # Inventory management (재고 관리)
     current_stock = Column(Integer, default=0)          # 현재 재고 수량
@@ -76,15 +93,32 @@ class Product(Base):
             "length": self.length,
             "material": self.material,
             "specs": self.specs,
+            # 카탈로그 정보
+            "n2b_product_code": self.n2b_product_code,
+            "customer_code_1": self.customer_code_1,
+            "sourcing_group": self.sourcing_group,
+            "leaf_class": self.leaf_class,
+            "standard_name": self.standard_name,
+            "model_name": self.model_name,
+            "manufacturer": self.manufacturer,
+            "is_standardized": self.is_standardized,
+            "is_public": self.is_public,
+            "attributes": self.attributes,
+            # 구매 정보
             "purchase_count": self.purchase_count,
             "average_rating": self.average_rating,
             "last_price": self.last_price,
+            "last_order_date": self.last_order_date.isoformat() if self.last_order_date else None,
+            "next_predicted_purchase_date": self.next_predicted_purchase_date.isoformat() if self.next_predicted_purchase_date else None,
+            "avg_purchase_interval_days": self.avg_purchase_interval_days,
+            # 재고 정보
             "current_stock": self.current_stock,
             "min_stock": self.min_stock,
             "max_stock": self.max_stock,
             "reorder_point": self.reorder_point,
             "stock_unit": self.stock_unit,
             "low_stock_alert": self.low_stock_alert,
+            # 타임스탬프
             "created_at": self.created_at.isoformat() if self.created_at else None,
             "updated_at": self.updated_at.isoformat() if self.updated_at else None,
         }
