@@ -156,18 +156,23 @@ const LiveInventory = () => {
       const canvas = canvasRef.current;
       const video = videoRef.current;
 
-      // Canvas 크기 설정
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
+      // Canvas 크기 설정 (한 번만)
+      if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+      }
 
-      // 비디오 프레임을 Canvas에 그리기
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      // 임시 Canvas 생성 (API 전송용)
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = video.videoWidth;
+      tempCanvas.height = video.videoHeight;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(video, 0, 0, tempCanvas.width, tempCanvas.height);
 
       console.log('[LiveInventory] Canvas에 프레임 그리기 완료');
 
-      // Canvas를 Blob으로 변환
-      canvas.toBlob(async (blob) => {
+      // 임시 Canvas를 Blob으로 변환
+      tempCanvas.toBlob(async (blob) => {
         if (!blob) {
           console.error('[LiveInventory] Blob 생성 실패');
           setIsProcessing(false);
@@ -191,9 +196,15 @@ const LiveInventory = () => {
           const data = await response.json();
           console.log('[LiveInventory] API 응답 데이터:', data);
 
-          // 바운딩 박스 그리기
+          // 바운딩 박스 그리기 (새 결과로 업데이트)
           if (data.raw_predictions && data.raw_predictions.length > 0) {
-            drawBoundingBoxes(canvas, data.raw_predictions);
+            console.log('[LiveInventory] 바운딩 박스 그리기:', data.raw_predictions.length, '개');
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // 이전 박스 지우기
+            drawBoundingBoxes(canvas, data.raw_predictions); // 새 박스 그리기
+          } else {
+            // 감지된 것이 없으면 기존 박스 유지 (clearRect 하지 않음)
+            console.log('[LiveInventory] 감지 없음, 기존 박스 유지');
           }
 
           if (data.success && data.detected_products && data.detected_products.length > 0) {
@@ -408,7 +419,7 @@ const LiveInventory = () => {
                   </div>
                 </div>
               ) : (
-                <>
+                <div className="relative">
                   <video
                     ref={videoRef}
                     autoPlay
@@ -416,13 +427,17 @@ const LiveInventory = () => {
                     muted
                     className="w-full h-auto"
                   />
-                  <canvas ref={canvasRef} className="hidden" />
+                  <canvas
+                    ref={canvasRef}
+                    className="absolute top-0 left-0 w-full h-full pointer-events-none"
+                    style={{ zIndex: 10 }}
+                  />
 
                   {/* 스캔 오버레이 */}
                   {isScanning && (
-                    <div className="absolute inset-0 border-4 border-green-500 animate-pulse pointer-events-none" />
+                    <div className="absolute inset-0 border-4 border-green-500 animate-pulse pointer-events-none" style={{ zIndex: 5 }} />
                   )}
-                </>
+                </div>
               )}
             </div>
           </div>

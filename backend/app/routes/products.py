@@ -407,7 +407,8 @@ async def detect_qcode(
             "detected_products": detected_products_info,
             "total_count": detection_result["total_count"],
             "detection_method": "roboflow_yolov8",
-            "frame_path": file_path
+            "frame_path": file_path,
+            "raw_predictions": detection_result.get("raw_predictions", [])  # 바운딩 박스 정보 추가
         }
 
     except Exception as e:
