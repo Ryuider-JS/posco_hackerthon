@@ -45,7 +45,7 @@ const Sidebar = () => {
       {/* Footer */}
       <div className="p-4 text-center text-sm text-blue-200 border-t border-blue-400">
         <p>WX해커톤 2025</p>
-        <p className="mt-1">Blmacpink</p>
+        <p className="mt-1">BLMACPINK</p>
       </div>
     </div>
   );

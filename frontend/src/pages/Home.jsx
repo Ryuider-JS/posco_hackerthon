@@ -22,7 +22,8 @@ const Home = () => {
               <div className="text-4xl mb-4">📸</div>
               <h3 className="text-xl font-semibold mb-2">AI Q CODE 등록</h3>
               <p className="text-gray-600">
-                사진으로 간편하게 제품을 등록하고 AI가 자동으로 매칭합니다
+                사진으로 간편하게 제품을 검색하고<br />
+                AI가 자동으로 매칭합니다
               </p>
             </div>
 
@@ -30,7 +31,8 @@ const Home = () => {
               <div className="text-4xl mb-4">📹</div>
               <h3 className="text-xl font-semibold mb-2">실시간 재고현황</h3>
               <p className="text-gray-600">
-                웹캠으로 실시간 재고를 파악하고 관리합니다
+                CCTV로 실시간 재고를<br />
+                파악하고 관리합니다
               </p>
             </div>
 
@@ -38,7 +40,8 @@ const Home = () => {
               <div className="text-4xl mb-4">📋</div>
               <h3 className="text-xl font-semibold mb-2">제품 목록</h3>
               <p className="text-gray-600">
-                등록된 모든 제품을 한눈에 확인하고 관리합니다
+                등록된 모든 제품을<br />
+                확인하고 관리합니다
               </p>
             </div>
           </div>

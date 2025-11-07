@@ -117,10 +117,15 @@ const LiveInventory = () => {
     fetchAvailableProducts();
   }, []);
 
-  // 재고 현황 및 알림 주기적으로 가져오기
+  // 초기 재고 현황 및 알림 로드 (1회만)
   useEffect(() => {
     fetchCurrentInventory();
     fetchAlerts();
+  }, []);
+
+  // 스캔 중일 때만 주기적으로 재고 현황 및 알림 갱신
+  useEffect(() => {
+    if (!isScanning) return;
 
     const interval = setInterval(() => {
       fetchCurrentInventory();
@@ -128,7 +133,12 @@ const LiveInventory = () => {
     }, 10000); // 10초마다
 
     return () => clearInterval(interval);
-  }, [selectedProducts]); // selectedProducts가 변경되면 알림 재조회
+  }, [isScanning]);
+
+  // selectedProducts 변경 시 알림 재조회
+  useEffect(() => {
+    fetchAlerts();
+  }, [selectedProducts]);
 
   // 재고 부족 알림이 생기면 Bedrock Agent에 Q-CODE 전달 (상태 변화 시에만)
   useEffect(() => {
@@ -264,6 +274,19 @@ const LiveInventory = () => {
     }
   };
 
+  // 클래스별 색상 매핑
+  const getClassColor = (className) => {
+    const colorMap = {
+      'Tangerine': '#ff6b35',      // 주황색 (귤)
+      'Egg': '#ffd60a',            // 노란색 (계란)
+      'Steel Plate': '#0096c7',    // 파란색 (강판)
+      'TANGERINE-001': '#ff6b35',
+      'EGG-001': '#ffd60a',
+      'STEEL-PLATE-001': '#0096c7'
+    };
+    return colorMap[className] || '#00ff00'; // 기본: 초록색
+  };
+
   // 바운딩 박스 그리기
   const drawBoundingBoxes = (canvas, predictions) => {
     const ctx = canvas.getContext('2d');
@@ -275,8 +298,11 @@ const LiveInventory = () => {
       const width = pred.width;
       const height = pred.height;
 
+      // 클래스별 색상 가져오기
+      const color = getClassColor(pred.class);
+
       // 박스 그리기
-      ctx.strokeStyle = '#00ff00'; // 초록색
+      ctx.strokeStyle = color;
       ctx.lineWidth = 3;
       ctx.strokeRect(x, y, width, height);
 
@@ -285,7 +311,7 @@ const LiveInventory = () => {
       ctx.font = '16px Arial';
       const textWidth = ctx.measureText(label).width;
 
-      ctx.fillStyle = '#00ff00';
+      ctx.fillStyle = color;
       ctx.fillRect(x, y - 25, textWidth + 10, 25);
 
       // 라벨 텍스트
