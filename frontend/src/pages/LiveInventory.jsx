@@ -746,8 +746,7 @@ const LiveInventory = () => {
                         </p>
                         {!alert.insufficient_data && (
                           <p className="text-sm mt-1 font-semibold text-red-700">
-                            {alert.status === 'critical' ? '⛔ 긴급 구매 필요' : '⚠️ '}
-                            {Math.ceil(alert.days_until_reorder)}일 후 재주문 필요
+                            {alert.status === 'critical' ? '⛔ 긴급 구매 필요' : '⚠️ 재주문 필요'}
                           </p>
                         )}
                       </div>

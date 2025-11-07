@@ -243,6 +243,8 @@ def detect_products_in_frame(image_path: str) -> Dict:
     CLASS_NAME_TO_QCODE = {
         "Tangerine": "TANGERINE-001",  # 탄제린 (귤)
         "Egg": "EGG-001",  # 계란
+        "Steel Plate": "STEEL-PLATE-001",  # 철판 (강판)
+        "Steel plate": "STEEL-PLATE-001",  # 철판 (대소문자 변형)
         # 추가 매핑이 필요하면 여기에 추가:
         # "Apple": "Q1208172",
         # "Banana": "Q13425723",
